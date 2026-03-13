@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
-import { HiQrcode, HiArrowLeft, HiSearch, HiPlus, HiCheck, HiPhotograph } from 'react-icons/hi';
+import { HiQrcode, HiArrowLeft, HiSearch, HiPlus, HiCheck, HiPhotograph, HiUpload, HiX } from 'react-icons/hi';
 
 export default function BarcodeScanner() {
   const { isRetailer } = useAuth();
@@ -12,6 +12,41 @@ export default function BarcodeScanner() {
   const [error, setError] = useState('');
   const [addForm, setAddForm] = useState({ price: '', stock: '10', image: '' });
   const [added, setAdded] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const removeImage = () => {
+    setImageFile(null);
+    setImagePreview('');
+    setAddForm({ ...addForm, image: '' });
+  };
+
+  const uploadImage = async () => {
+    if (!imageFile) return addForm.image || '';
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      const { data } = await API.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      const backendUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+      return `${backendUrl}${data.imageUrl}`;
+    } catch (err) {
+      console.error('Upload error:', err);
+      return '';
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const lookupBarcode = async () => {
     if (!barcode.trim()) return;
@@ -33,12 +68,14 @@ export default function BarcodeScanner() {
   const addToInventory = async () => {
     if (!scannedProduct) return;
     try {
+      const imageUrl = await uploadImage();
+      
       await API.post('/retailer/products', {
         name: scannedProduct.name,
         description: scannedProduct.description || '',
         category: scannedProduct.category || 'General',
         barcode: barcode,
-        image: addForm.image || 'https://via.placeholder.com/300x300?text=Product',
+        image: imageUrl || 'https://via.placeholder.com/300x300?text=Product',
         price: parseFloat(addForm.price),
         mrp: scannedProduct.mrp,
         discount: Math.round((1 - parseFloat(addForm.price) / scannedProduct.mrp) * 100),
@@ -141,12 +178,33 @@ export default function BarcodeScanner() {
                 <input type="number" value={addForm.stock} onChange={e => setAddForm({ ...addForm, stock: e.target.value })} className="input-field" />
               </div>
               <div>
-                <label className="text-xs text-muted block mb-1">Image URL (optional)</label>
-                <input type="text" value={addForm.image} onChange={e => setAddForm({ ...addForm, image: e.target.value })} placeholder="https://..." className="input-field" />
+                <label className="text-xs text-muted block mb-1">Product Photo</label>
+                {!imagePreview ? (
+                  <label className="flex flex-col items-center justify-center w-full h-[42px] rounded-lg border border-dashed border-border hover:border-primary/50 bg-card cursor-pointer transition-all group">
+                    <div className="flex items-center justify-center gap-2">
+                      <HiUpload className="text-muted group-hover:text-primary-light transition-colors" />
+                      <span className="text-[11px] text-muted group-hover:text-primary-light transition-colors">Upload image</span>
+                    </div>
+                    <input type="file" accept=".jpg,.jpeg,.png,.webp" onChange={handleImageSelect} className="hidden" />
+                  </label>
+                ) : (
+                  <div className="relative inline-block w-full">
+                    <img src={imagePreview} alt="Preview" className="w-full h-14 rounded-lg object-cover border border-border" />
+                    <button type="button" onClick={removeImage}
+                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-danger text-white flex items-center justify-center text-[10px] hover:scale-110 transition-transform shadow-lg">
+                      <HiX />
+                    </button>
+                    {uploading && (
+                      <div className="absolute inset-0 bg-dark/60 rounded-xl flex items-center justify-center">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-            <button onClick={addToInventory} className="btn-primary flex items-center gap-2 w-full justify-center !py-3">
-              <HiPlus /> Add to Inventory
+            <button onClick={addToInventory} disabled={uploading} className="btn-primary flex items-center gap-2 w-full justify-center !py-3 disabled:opacity-50 mt-2">
+              {uploading ? 'Adding...' : <><HiPlus /> Add to Inventory</>}
             </button>
           </div>
         </div>

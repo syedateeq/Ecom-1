@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
-import { HiQrcode, HiSearch, HiPhotograph, HiArrowLeft, HiCheck } from 'react-icons/hi';
+import { HiQrcode, HiSearch, HiPhotograph, HiArrowLeft, HiCheck, HiUpload, HiX } from 'react-icons/hi';
 
 export default function AddProduct() {
   const { isRetailer } = useAuth();
@@ -11,6 +11,9 @@ export default function AddProduct() {
   const [barcodeStatus, setBarcodeStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   const [form, setForm] = useState({
     name: '', description: '', category: 'General', barcode: '',
@@ -39,17 +42,56 @@ export default function AddProduct() {
     }
   };
 
+  // Handle image file selection
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  // Remove selected image
+  const removeImage = () => {
+    setImageFile(null);
+    setImagePreview('');
+    setForm({ ...form, image: '' });
+  };
+
+  // Upload image to server
+  const uploadImage = async () => {
+    if (!imageFile) return form.image || '';
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      const { data } = await API.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      // Prepend backend URL so image loads correctly regardless of proxy configuration
+      const backendUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+      return `${backendUrl}${data.imageUrl}`;
+    } catch (err) {
+      console.error('Upload error:', err);
+      return '';
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
+      // Upload image first if a file was selected
+      const imageUrl = await uploadImage();
+
       await API.post('/retailer/products', {
         ...form,
         price: Number(form.price),
         mrp: Number(form.mrp),
         discount: Number(form.discount),
         stock: Number(form.stock),
-        image: form.image || 'https://via.placeholder.com/300x300?text=Product'
+        image: imageUrl || 'https://via.placeholder.com/300x300?text=Product'
       });
       setSuccess(true);
       setTimeout(() => navigate('/retailer/dashboard'), 1500);
@@ -167,31 +209,39 @@ export default function AddProduct() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm text-muted block mb-1">Stock Quantity</label>
-              <input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })}
-                className="input-field" />
-            </div>
-            <div>
-              <label className="text-sm text-muted block mb-1">Image URL</label>
-              <div className="relative">
-                <HiPhotograph className="absolute left-3 top-3.5 text-muted" />
-                <input type="url" value={form.image} onChange={e => setForm({ ...form, image: e.target.value })}
-                  className="input-field !pl-10" placeholder="https://... (optional)" />
-              </div>
-            </div>
+          <div>
+            <label className="text-sm text-muted block mb-1">Stock Quantity</label>
+            <input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })}
+              className="input-field" />
           </div>
 
-          {/* Image Preview */}
-          {form.image && (
-            <div className="mt-2">
-              <img src={form.image} alt="Preview" className="w-32 h-32 rounded-xl object-cover border border-border"
-                onError={e => { e.target.style.display = 'none'; }} />
-            </div>
-          )}
+          {/* Product Photo Upload */}
+          <div>
+            <label className="text-sm text-muted block mb-2">Product Photo</label>
+            {!imagePreview ? (
+              <label className="flex flex-col items-center justify-center w-full h-40 rounded-xl border-2 border-dashed border-border hover:border-primary/50 bg-card cursor-pointer transition-all group">
+                <HiUpload className="text-3xl text-muted group-hover:text-primary-light transition-colors mb-2" />
+                <span className="text-sm text-muted group-hover:text-primary-light transition-colors">Click to upload photo</span>
+                <span className="text-xs text-muted mt-1">JPG, JPEG, PNG (max 5MB)</span>
+                <input type="file" accept=".jpg,.jpeg,.png,.webp" onChange={handleImageSelect} className="hidden" />
+              </label>
+            ) : (
+              <div className="relative inline-block">
+                <img src={imagePreview} alt="Preview" className="w-40 h-40 rounded-xl object-cover border-2 border-border" />
+                <button type="button" onClick={removeImage}
+                  className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-danger text-white flex items-center justify-center text-sm hover:scale-110 transition-transform shadow-lg">
+                  <HiX />
+                </button>
+                {uploading && (
+                  <div className="absolute inset-0 bg-dark/60 rounded-xl flex items-center justify-center">
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
-          <button type="submit" disabled={loading} className="btn-primary w-full !py-3 text-center disabled:opacity-50 mt-4">
+          <button type="submit" disabled={loading || uploading} className="btn-primary w-full !py-3 text-center disabled:opacity-50 mt-4">
             {loading ? 'Adding Product...' : 'Add Product'}
           </button>
         </div>
