@@ -39,7 +39,7 @@ router.get('/profile', auth, retailerOnly, (req, res) => {
 });
 
 // PUT /api/retailer/profile
-router.put('/profile', auth, retailerOnly, (req, res) => {
+router.put('/profile', auth, retailerOnly, async (req, res) => {
   try {
     const { shopName, shopAddress, phone, category, lat, lng } = req.body;
     
@@ -50,6 +50,20 @@ router.put('/profile', auth, retailerOnly, (req, res) => {
     if (phone) { updates.push('phone = ?'); values.push(phone); }
     if (category) { updates.push('category = ?'); values.push(category); }
     if (lat && lng) { updates.push('lat = ?, lng = ?'); values.push(lat, lng); }
+
+    // Auto-geocode if address changed but no lat/lng provided
+    if (shopAddress && !(lat && lng)) {
+      try {
+        const { geocodeAddress } = require('../utils/geocoder');
+        const geo = await geocodeAddress(shopAddress);
+        if (geo) {
+          updates.push('lat = ?, lng = ?');
+          values.push(geo.lat, geo.lng);
+        }
+      } catch (geoErr) {
+        console.warn('Auto-geocode skipped:', geoErr.message);
+      }
+    }
 
     if (updates.length > 0) {
       values.push(req.user.id);

@@ -269,4 +269,80 @@ router.get('/:id', (req, res) => {
   }
 });
 
+// GET /api/products/nearby-shops?lat=17.385&lng=78.4867&radius=15
+// Returns all shops with their products, distance, and stock summary
+router.get('/nearby-shops', (req, res) => {
+  try {
+    const userLat = parseFloat(req.query.lat) || 17.385;
+    const userLng = parseFloat(req.query.lng) || 78.4867;
+    const radius = parseFloat(req.query.radius) || 15; // km
+
+    // Fetch all retailers
+    const retailers = db.prepare(
+      'SELECT id, name, email, shop_name, shop_address, phone, whatsapp, timings, category, rating, lat, lng FROM retailers'
+    ).all();
+
+    // Fetch all available products grouped by retailer
+    const products = db.prepare(
+      'SELECT id, name, price, mrp, discount, stock, availability, category, image, retailer_id FROM products WHERE availability = 1'
+    ).all();
+
+    // Group products by retailer_id
+    const productsByRetailer = {};
+    for (const p of products) {
+      if (!productsByRetailer[p.retailer_id]) productsByRetailer[p.retailer_id] = [];
+      productsByRetailer[p.retailer_id].push({
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        mrp: p.mrp,
+        discount: p.discount,
+        stock: p.stock,
+        category: p.category,
+        image: p.image,
+      });
+    }
+
+    // Build shop list with distance
+    const shops = retailers
+      .map((r) => {
+        const dist = getDistance(userLat, userLng, r.lat || 17.385, r.lng || 78.4867);
+        const shopProducts = productsByRetailer[r.id] || [];
+        return {
+          id: r.id,
+          name: r.name,
+          shopName: r.shop_name,
+          shopAddress: r.shop_address,
+          phone: r.phone,
+          whatsapp: r.whatsapp,
+          timings: r.timings,
+          category: r.category,
+          rating: r.rating,
+          lat: r.lat,
+          lng: r.lng,
+          distance: Math.round(dist * 10) / 10,
+          totalProducts: shopProducts.length,
+          inStockCount: shopProducts.filter((p) => p.stock > 0).length,
+          priceRange: shopProducts.length > 0
+            ? { min: Math.min(...shopProducts.map((p) => p.price)), max: Math.max(...shopProducts.map((p) => p.price)) }
+            : null,
+          products: shopProducts.slice(0, 5), // top 5 for popup preview
+        };
+      })
+      .filter((s) => s.distance <= radius)
+      .sort((a, b) => a.distance - b.distance);
+
+    res.json({
+      userLocation: { lat: userLat, lng: userLng },
+      radius,
+      totalShops: shops.length,
+      shops,
+    });
+  } catch (err) {
+    console.error('Nearby shops error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
 module.exports = router;
+

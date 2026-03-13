@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { HiSearch, HiLightningBolt, HiLocationMarker, HiShieldCheck, HiTrendingDown, HiStar } from 'react-icons/hi';
 
 export default function Home() {
@@ -12,10 +12,10 @@ export default function Home() {
   };
 
   const features = [
-    { icon: <HiTrendingDown className="text-3xl text-secondary" />, title: 'Lowest Price Finder', desc: 'Compare prices across Amazon, Flipkart, Croma & local shops instantly' },
-    { icon: <HiLocationMarker className="text-3xl text-primary-light" />, title: 'Nearby Shop Discovery', desc: 'Find local stores near you with real-time stock & prices' },
-    { icon: <HiLightningBolt className="text-3xl text-gold" />, title: 'Smart Recommendations', desc: 'AI-powered suggestions for Cheapest, Best Value & Nearest deals' },
-    { icon: <HiShieldCheck className="text-3xl text-danger" />, title: 'Retailer Dashboard', desc: 'Local shopkeepers can list products and reach nearby customers' },
+    { icon: <HiTrendingDown className="text-3xl text-secondary" />, title: 'Lowest Price Finder', desc: 'Compare prices across Amazon, Flipkart, Croma & local shops instantly', link: '/lowest-price-finder' },
+    { icon: <HiLocationMarker className="text-3xl text-primary-light" />, title: 'Nearby Shop Discovery', desc: 'Find local stores near you with real-time stock & prices', link: '/nearby-shops' },
+    { icon: <HiLightningBolt className="text-3xl text-gold" />, title: 'Smart Recommendations', desc: 'AI-powered suggestions for Cheapest, Best Value & Nearest deals', link: '/smart-recommendations' },
+    { icon: <HiShieldCheck className="text-3xl text-danger" />, title: 'Retailer Dashboard', desc: 'Local shopkeepers can list products and reach nearby customers', link: '/retailer-dashboard' },
   ];
 
   const quickSearches = ['iPhone 15', 'Samsung Galaxy S24', 'Nike Shoes', 'Laptop', 'Mixer Grinder', 'Headphones'];
@@ -85,11 +85,11 @@ export default function Home() {
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((f, i) => (
-            <div key={i} className="glass-card p-6 text-center animate-fade-in-up" style={{ animationDelay: `${i * 0.1}s` }}>
+            <Link key={i} to={f.link} className="glass-card p-6 text-center animate-fade-in-up block hover:scale-[1.03] transition-transform duration-300" style={{ animationDelay: `${i * 0.1}s` }}>
               <div className="mb-4 flex justify-center">{f.icon}</div>
               <h3 className="font-semibold text-text mb-2">{f.title}</h3>
               <p className="text-sm text-muted">{f.desc}</p>
-            </div>
+            </Link>
           ))}
         </div>
       </section>

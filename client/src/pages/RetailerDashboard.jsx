@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
-import { HiPlus, HiPencil, HiTrash, HiOfficeBuilding, HiShoppingBag, HiCurrencyRupee, HiCheck, HiX } from 'react-icons/hi';
+import { HiPlus, HiPencil, HiTrash, HiOfficeBuilding, HiShoppingBag, HiCurrencyRupee, HiCheck, HiX, HiQrcode, HiChartBar, HiUserGroup, HiShieldCheck, HiArrowRight } from 'react-icons/hi';
+import HeroSlider from '../components/HeroSlider';
 
 export default function RetailerDashboard() {
   const { user, isRetailer } = useAuth();
@@ -85,6 +86,9 @@ export default function RetailerDashboard() {
         </Link>
       </div>
 
+      {/* Hero Slider */}
+      <HeroSlider />
+
       {/* Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-fade-in-up">
         {[
@@ -98,6 +102,33 @@ export default function RetailerDashboard() {
             <p className="text-2xl font-bold text-text">{stat.value}</p>
             <p className="text-xs text-muted">{stat.label}</p>
           </div>
+        ))}
+      </div>
+
+      {/* ───── Feature Cards ───── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8 animate-fade-in-up stagger-1">
+        {[
+          { icon: <HiShoppingBag className="text-3xl text-primary" />, title: 'Product Listing', desc: 'View, add, edit, and manage all your listed products', link: '/retailer/products', color: 'from-primary/15 to-primary/5' },
+          { icon: <HiQrcode className="text-3xl text-secondary" />, title: 'Barcode Scanner', desc: 'Scan barcodes to quickly add products to inventory', link: '/retailer/barcode-scanner', color: 'from-secondary/15 to-secondary/5' },
+          { icon: <HiCurrencyRupee className="text-3xl text-gold" />, title: 'Price Management', desc: 'Update MRP, selling price, and apply discounts', link: '/retailer/price-management', color: 'from-gold/15 to-gold/5' },
+          { icon: <HiChartBar className="text-3xl text-danger" />, title: 'Sales Insights', desc: 'Track views, clicks, and customer engagement', link: '/retailer/sales-insights', color: 'from-danger/15 to-danger/5' },
+          { icon: <HiUserGroup className="text-3xl text-secondary-light" />, title: 'Local Reach', desc: 'See how many nearby customers discovered your store', link: '/retailer/local-reach', color: 'from-secondary-light/15 to-secondary-light/5' },
+          { icon: <HiShieldCheck className="text-3xl text-primary-light" />, title: 'Trusted Platform', desc: 'Earn a verified badge and boost customer trust', link: '/retailer/trusted-platform', color: 'from-primary-light/15 to-primary-light/5' },
+        ].map((card, i) => (
+          <Link key={i} to={card.link} className="glass-card overflow-hidden group hover:scale-[1.03] transition-all duration-300 block">
+            <div className={`bg-gradient-to-r ${card.color} px-5 py-4 border-b border-border/20`}>
+              <div className="flex items-center justify-between">
+                {card.icon}
+                <span className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-muted group-hover:bg-primary group-hover:text-white transition-all">
+                  <HiArrowRight />
+                </span>
+              </div>
+            </div>
+            <div className="p-5">
+              <h3 className="font-bold text-text mb-1 group-hover:text-primary-light transition-colors">{card.title}</h3>
+              <p className="text-xs text-muted">{card.desc}</p>
+            </div>
+          </Link>
         ))}
       </div>
 

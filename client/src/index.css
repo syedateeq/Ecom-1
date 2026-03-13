@@ -170,3 +170,35 @@ body {
 ::-webkit-scrollbar-track { background: var(--color-dark); }
 ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
+
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
+
+/* ===== Leaflet Custom Popup Styles ===== */
+.smartcart-popup .leaflet-popup-content-wrapper {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  padding: 0;
+  border: 1px solid #eee;
+}
+
+.smartcart-popup .leaflet-popup-content {
+  margin: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #333;
+}
+
+.smartcart-popup .leaflet-popup-tip {
+  background: #ffffff;
+  border: 1px solid #eee;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.leaflet-container {
+  font-family: var(--font-sans);
+}
+
