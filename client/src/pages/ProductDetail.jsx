@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import API from '../utils/api';
 import { HiStar, HiLocationMarker, HiTag, HiShoppingCart, HiArrowLeft, HiExternalLink } from 'react-icons/hi';
 
 export default function ProductDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [onlinePrices, setOnlinePrices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -112,7 +113,14 @@ export default function ProductDetail() {
             )}
           </div>
 
-          <button className="btn-primary w-full !py-3 flex items-center justify-center gap-2 text-base">
+          <button
+            onClick={() => {
+              if (isOfflineCheaper && shop?._id) {
+                navigate(`/store/${shop._id}/product/${product._id}`);
+              }
+            }}
+            className="btn-primary w-full !py-3 flex items-center justify-center gap-2 text-base"
+          >
             <HiShoppingCart /> {isOfflineCheaper ? 'Visit Store' : 'Buy Online'}
           </button>
         </div>

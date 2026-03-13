@@ -29,6 +29,8 @@ db.exec(`
     shop_name TEXT NOT NULL,
     shop_address TEXT DEFAULT '',
     phone TEXT DEFAULT '',
+    whatsapp TEXT DEFAULT '',
+    timings TEXT DEFAULT '9:00 AM - 9:00 PM',
     category TEXT DEFAULT 'General',
     rating REAL DEFAULT 4.0,
     lat REAL DEFAULT 17.385,

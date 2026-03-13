@@ -90,8 +90,14 @@ export default function ProductCard({ product, type = 'offline', recommendation 
               Buy Now →
             </a>
           ) : (
-            <button className="btn-secondary text-xs !py-2 block text-center w-full">
-              View Details →
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/store/${product.retailerId}/product/${product._id}`);
+              }}
+              className="btn-secondary text-xs !py-2 block text-center w-full"
+            >
+              🏪 Visit Store →
             </button>
           )}
         </div>

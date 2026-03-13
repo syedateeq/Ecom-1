@@ -24,15 +24,15 @@ async function seed() {
 
     // Create 5 mock retailers around Hyderabad
     const insertRetailer = db.prepare(
-      'INSERT INTO retailers (name, email, password, shop_name, shop_address, phone, category, rating, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO retailers (name, email, password, shop_name, shop_address, phone, whatsapp, timings, category, rating, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
 
     const retailers = [
-      ['Rahul Sharma', 'retailer@demo.com', hashedPassword, 'TechZone Electronics', 'Ameerpet, Hyderabad', '9876543210', 'Electronics', 4.5, 17.4375, 78.4483],
-      ['Priya Patel', 'priya@shop.com', hashedPassword, 'Fashion Hub', 'Banjara Hills, Hyderabad', '9876543211', 'Fashion', 4.2, 17.4156, 78.4347],
-      ['Arun Kumar', 'arun@shop.com', hashedPassword, 'Kitchen World', 'Secunderabad, Hyderabad', '9876543212', 'Kitchen', 4.0, 17.4399, 78.4983],
-      ['Sneha Reddy', 'sneha@shop.com', hashedPassword, 'Gadget Gallery', 'Kukatpally, Hyderabad', '9876543213', 'Electronics', 4.8, 17.4947, 78.3996],
-      ['Mohammed Ali', 'ali@shop.com', hashedPassword, 'Shoe Palace', 'Begumpet, Hyderabad', '9876543214', 'Footwear', 4.3, 17.4439, 78.4630],
+      ['Rahul Sharma', 'retailer@demo.com', hashedPassword, 'TechZone Electronics', 'Ameerpet, Hyderabad', '9876543210', '919876543210', '10:00 AM - 9:00 PM', 'Electronics', 4.5, 17.4375, 78.4483],
+      ['Priya Patel', 'priya@shop.com', hashedPassword, 'Fashion Hub', 'Banjara Hills, Hyderabad', '9876543211', '919876543211', '10:30 AM - 8:30 PM', 'Fashion', 4.2, 17.4156, 78.4347],
+      ['Arun Kumar', 'arun@shop.com', hashedPassword, 'Kitchen World', 'Secunderabad, Hyderabad', '9876543212', '919876543212', '9:00 AM - 8:00 PM', 'Kitchen', 4.0, 17.4399, 78.4983],
+      ['Sneha Reddy', 'sneha@shop.com', hashedPassword, 'Gadget Gallery', 'Kukatpally, Hyderabad', '9876543213', '919876543213', '11:00 AM - 10:00 PM', 'Electronics', 4.8, 17.4947, 78.3996],
+      ['Mohammed Ali', 'ali@shop.com', hashedPassword, 'Shoe Palace', 'Begumpet, Hyderabad', '9876543214', '919876543214', '10:00 AM - 9:30 PM', 'Footwear', 4.3, 17.4439, 78.4630],
     ];
 
     const retailerIds = [];

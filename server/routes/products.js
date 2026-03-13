@@ -119,6 +119,7 @@ router.get('/search', (req, res) => {
         discount: p.discount,
         stock: p.stock,
         availability: p.availability,
+        retailerId: p.retailer_id,
         shopName: p.shop_name || 'Unknown Shop',
         shopAddress: p.shop_address || '',
         shopRating: p.shop_rating || 4.0,
@@ -151,6 +152,60 @@ router.get('/search', (req, res) => {
     });
   } catch (err) {
     console.error('Search error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+// GET /api/products/store/:shopId/product/:productId — Visit Store detail page
+router.get('/store/:shopId/product/:productId', (req, res) => {
+  try {
+    const { shopId, productId } = req.params;
+    const userLat = parseFloat(req.query.lat) || 17.385;
+    const userLng = parseFloat(req.query.lng) || 78.4867;
+
+    // Fetch product
+    const product = db.prepare('SELECT * FROM products WHERE id = ? AND retailer_id = ?').get(productId, shopId);
+    if (!product) return res.status(404).json({ message: 'Product not found in this store' });
+
+    // Fetch full retailer/shop details
+    const shop = db.prepare('SELECT * FROM retailers WHERE id = ?').get(shopId);
+    if (!shop) return res.status(404).json({ message: 'Store not found' });
+
+    // Calculate distance
+    const distance = getDistance(userLat, userLng, shop.lat || 17.385, shop.lng || 78.4867);
+
+    res.json({
+      product: {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        image: product.image,
+        price: product.price,
+        mrp: product.mrp,
+        discount: product.discount,
+        stock: product.stock,
+        category: product.category,
+        barcode: product.barcode,
+        availability: product.availability
+      },
+      shop: {
+        id: shop.id,
+        shopName: shop.shop_name,
+        shopkeeperName: shop.name,
+        phone: shop.phone,
+        whatsapp: shop.whatsapp || shop.phone,
+        email: shop.email,
+        shopAddress: shop.shop_address,
+        lat: shop.lat,
+        lng: shop.lng,
+        rating: shop.rating,
+        category: shop.category,
+        timings: shop.timings || '9:00 AM - 9:00 PM',
+        distance: Math.round(distance * 10) / 10
+      }
+    });
+  } catch (err) {
+    console.error('Store product detail error:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });

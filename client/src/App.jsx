@@ -9,6 +9,7 @@ import Search from './pages/Search'
 import ProductDetail from './pages/ProductDetail'
 import RetailerDashboard from './pages/RetailerDashboard'
 import AddProduct from './pages/AddProduct'
+import StoreProductDetail from './pages/StoreProductDetail'
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <Route path="/retailer/signup" element={<RetailerSignup />} />
           <Route path="/search" element={<Search />} />
           <Route path="/product/:id" element={<ProductDetail />} />
+          <Route path="/store/:shopId/product/:productId" element={<StoreProductDetail />} />
           <Route path="/retailer/dashboard" element={<RetailerDashboard />} />
           <Route path="/retailer/add-product" element={<AddProduct />} />
         </Routes>
