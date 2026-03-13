@@ -1,6 +1,119 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const https = require('https');
+const http = require('http');
+
+// ─── URL helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Resolve a potentially shortened URL by following up to 5 redirects.
+ * Returns the final URL string, or the original URL if no redirect happened / error.
+ */
+function resolveShortUrl(url, maxRedirects = 5) {
+  return new Promise((resolve) => {
+    let current = url;
+    let remaining = maxRedirects;
+
+    function follow(u) {
+      if (remaining <= 0) return resolve(current);
+      remaining--;
+
+      let parsedUrl;
+      try { parsedUrl = new URL(u); } catch { return resolve(current); }
+
+      const lib = parsedUrl.protocol === 'https:' ? https : http;
+      const req = lib.request(
+        { method: 'HEAD', hostname: parsedUrl.hostname, port: parsedUrl.port || undefined,
+          path: parsedUrl.pathname + parsedUrl.search, headers: { 'User-Agent': 'Mozilla/5.0' } },
+        (res) => {
+          const loc = res.headers['location'];
+          if (loc && (res.statusCode >= 300 && res.statusCode < 400)) {
+            // Location may be relative
+            current = loc.startsWith('http') ? loc : new URL(loc, u).href;
+            follow(current);
+          } else {
+            resolve(current);
+          }
+        }
+      );
+      req.setTimeout(5000, () => { req.destroy(); resolve(current); });
+      req.on('error', () => resolve(current));
+      req.end();
+    }
+
+    follow(current);
+  });
+}
+
+/** Known short-link / redirect domains that must be resolved before extraction */
+const SHORT_DOMAINS = new Set([
+  'amzn.in', 'amzn.to',
+  'fkrt.cc', 'fkrt.it',
+  'bit.ly', 'tinyurl.com', 'rb.gy', 't.co',
+  'ow.ly', 'is.gd', 'buff.ly', 'goo.gl', 'shorturl.at',
+]);
+
+function isShortOrRedirectUrl(hostname) {
+  const h = hostname.replace(/^www\./, '').toLowerCase();
+  return SHORT_DOMAINS.has(h);
+}
+
+function detectPlatform(hostname) {
+  const h = hostname.replace(/^(www\.|m\.|smile\.|dl\.)/, '').toLowerCase();
+  if (h === 'amazon.in' || h === 'amazon.com') return 'Amazon';
+  if (h === 'flipkart.com') return 'Flipkart';
+  return null;
+}
+
+// Amazon: match  /optional-slug/dp/ASIN  or  /gp/product/ASIN  or  /gp/aw/d/ASIN
+const AMAZON_RE = /\/(?:([^/]+)\/)?(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i;
+
+function extractAmazonTitle(parsed) {
+  const m = parsed.pathname.match(AMAZON_RE);
+  if (!m) return null;
+
+  const slug = m[1]; // e.g. "Apple-iPhone-15-128GB-Black" — may be undefined
+  if (slug) {
+    const titleWords = slug
+      .split('-')
+      .map(w => w.replace(/[_+%20]/g, ' ').trim())
+      .filter(w => w.length > 0 && w !== 'dp' && w !== 'gp');
+    if (titleWords.length > 0) return titleWords.join(' ');
+  }
+  // Fallback: use ASIN as search term (may not match DB but avoids hard failure)
+  return m[2];
+}
+
+// Flipkart: /product-slug/p/ITEM_ID
+const FLIPKART_RE = /\/([^/]+)\/p\/[^/?#]*/i;
+
+function extractFlipkartTitle(parsed) {
+  // Try /slug/p/id pattern
+  const m = parsed.pathname.match(FLIPKART_RE);
+  if (m) {
+    const slug = m[1];
+    if (slug && slug !== 'p') {
+      const words = slug
+        .split('-')
+        .map(w => w.replace(/[_+%20]/g, ' ').trim())
+        .filter(w => w.length > 0);
+      if (words.length > 0) return words.join(' ');
+    }
+  }
+  // Fallback: query param
+  const qParam = parsed.searchParams.get('q') || parsed.searchParams.get('title');
+  if (qParam) return qParam;
+  return null;
+}
+
+function slugToReadable(title) {
+  if (!title) return title;
+  return title
+    .replace(/\b(dp|gp|ref|pid|lid|marketplace|store|srno|otracker|iid|ssid|affid)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 
 // Helper: Calculate distance between two lat/lng points (in km)
 function getDistance(lat1, lng1, lat2, lng2) {
@@ -153,6 +266,154 @@ router.get('/search', (req, res) => {
   } catch (err) {
     console.error('Search error:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+// POST /api/products/url-search — Extract product title from Amazon/Flipkart URL and search
+router.post('/url-search', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ message: 'URL is required' });
+
+    // Validate parseable URL
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch (e) {
+      return res.status(400).json({ message: 'Invalid URL format. Please paste a valid product link.' });
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return res.status(400).json({ message: 'Invalid URL format. Please paste a valid product link.' });
+    }
+
+    // ── Step 1: Resolve redirects for short / unknown URLs ──────────────────
+    const needsResolve = isShortOrRedirectUrl(parsed.hostname) ||
+      detectPlatform(parsed.hostname) === null; // unknown domain → try resolving
+    let resolvedUrl = url;
+    let wasShortLink = isShortOrRedirectUrl(parsed.hostname);
+
+    if (needsResolve) {
+      resolvedUrl = await resolveShortUrl(url);
+      try { parsed = new URL(resolvedUrl); } catch { /* keep original parsed */ }
+    }
+
+    // ── Step 2: Detect platform from resolved URL ───────────────────────────
+    const platform = detectPlatform(parsed.hostname);
+
+    if (!platform) {
+      // Still not a known platform after resolving
+      if (wasShortLink) {
+        return res.status(400).json({
+          message: 'Short product links are not supported yet. Please paste the full Amazon or Flipkart product page URL.',
+          isShortLink: true
+        });
+      }
+      return res.status(400).json({
+        message: 'Only Amazon and Flipkart links are currently supported.',
+        supportedDomains: ['amazon.in', 'flipkart.com']
+      });
+    }
+
+    // ── Step 3: Extract product title ───────────────────────────────────────
+    let rawTitle = null;
+    if (platform === 'Amazon') {
+      rawTitle = extractAmazonTitle(parsed);
+    } else {
+      rawTitle = extractFlipkartTitle(parsed);
+    }
+
+    let extractedTitle = rawTitle ? slugToReadable(rawTitle) : null;
+
+    if (!extractedTitle) {
+      if (wasShortLink) {
+        return res.status(400).json({
+          message: 'Short product links are not supported yet. Please paste the full Amazon or Flipkart product page URL.',
+          isShortLink: true
+        });
+      }
+      return res.status(400).json({
+        message: 'Unable to extract product details from this link. Please try pasting a direct product page URL.'
+      });
+    }
+
+    // ── Step 4: Search DB using extracted title ──────────────────────────────
+    const q = extractedTitle;
+    const userLat = parseFloat(req.body.lat) || 17.385;
+    const userLng = parseFloat(req.body.lng) || 78.4867;
+    const maxBudget = req.body.budget ? parseFloat(req.body.budget) : Infinity;
+
+    // Limit to 6 meaningful terms to avoid over-restriction
+    const searchTerms = q.split(/\s+/).filter(w => w.length > 1).slice(0, 6);
+
+    if (searchTerms.length === 0) {
+      return res.status(400).json({ message: 'Unable to extract a searchable product name from the URL.' });
+    }
+
+    // Search online prices
+    let onlinePrices = db.prepare(`
+      SELECT * FROM online_prices 
+      WHERE ${searchTerms.map(() => 'product_name LIKE ?').join(' OR ')}
+    `).all(...searchTerms.map(t => `%${t}%`));
+
+    if (maxBudget !== Infinity) {
+      onlinePrices = onlinePrices.filter(p => p.price <= maxBudget);
+    }
+
+    onlinePrices = onlinePrices.map(p => ({
+      id: p.id,
+      productName: p.product_name,
+      platform: p.platform,
+      price: p.price,
+      originalPrice: p.original_price,
+      url: p.url,
+      rating: p.rating,
+      deliveryDays: p.delivery_days,
+      image: p.image,
+      inStock: p.in_stock,
+      type: 'online'
+    }));
+
+    // Search offline products
+    let offlineProducts = db.prepare(`
+      SELECT p.*, r.shop_name, r.shop_address, r.rating as shop_rating, r.lat as r_lat, r.lng as r_lng
+      FROM products p
+      JOIN retailers r ON p.retailer_id = r.id
+      WHERE p.availability = 1 AND (${searchTerms.map(() => 'p.name LIKE ? OR p.category LIKE ? OR p.description LIKE ?').join(' OR ')})
+    `).all(...searchTerms.flatMap(t => [`%${t}%`, `%${t}%`, `%${t}%`]));
+
+    if (maxBudget !== Infinity) {
+      offlineProducts = offlineProducts.filter(p => p.price <= maxBudget);
+    }
+
+    offlineProducts = offlineProducts.map(p => {
+      const distance = getDistance(userLat, userLng, p.r_lat || 17.385, p.r_lng || 78.4867);
+      return {
+        _id: p.id, name: p.name, description: p.description, category: p.category,
+        image: p.image, price: p.price, mrp: p.mrp, discount: p.discount,
+        stock: p.stock, availability: p.availability, retailerId: p.retailer_id,
+        shopName: p.shop_name || 'Unknown Shop', shopAddress: p.shop_address || '',
+        shopRating: p.shop_rating || 4.0, rating: p.shop_rating || 4.0,
+        distance: Math.round(distance * 10) / 10, type: 'offline'
+      };
+    });
+
+    const recommendations = computeRecommendations(onlinePrices, offlineProducts);
+
+    res.json({
+      query: q,
+      extractedTitle,
+      sourceUrl: resolvedUrl,   // final resolved URL (not the short link)
+      sourcePlatform: platform,
+      wasShortLink,
+      onlinePrices,
+      offlineProducts,
+      recommendations,
+      totalResults: onlinePrices.length + offlineProducts.length
+    });
+  } catch (err) {
+    console.error('URL search error:', err);
+    res.status(500).json({ message: 'Server error while processing URL', error: err.message });
   }
 });
 

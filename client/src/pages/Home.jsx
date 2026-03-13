@@ -8,7 +8,14 @@ export default function Home() {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`);
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    // Detect URL vs plain text
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      navigate(`/search?url=${encodeURIComponent(trimmed)}`);
+    } else {
+      navigate(`/search?q=${encodeURIComponent(trimmed)}`);
+    }
   };
 
   const features = [
@@ -52,7 +59,7 @@ export default function Home() {
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search for any product... iPhone 15, laptop, mixer grinder"
+                  placeholder="Search product name or paste Amazon / Flipkart link…"
                   className="flex-1 bg-transparent border-none outline-none px-4 py-5 text-text text-lg placeholder:text-muted"
                 />
                 <button type="submit" className="btn-primary !rounded-xl mr-2 text-base !py-3 !px-8">
