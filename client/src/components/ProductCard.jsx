@@ -1,8 +1,12 @@
-import { HiStar, HiLocationMarker, HiTag } from 'react-icons/hi';
+import { useState } from 'react';
+import { HiStar, HiLocationMarker, HiTag, HiShoppingCart } from 'react-icons/hi';
 import { useNavigate } from 'react-router-dom';
+import { useCart } from '../context/CartContext';
 
 export default function ProductCard({ product, type = 'offline', recommendation }) {
   const navigate = useNavigate();
+  const { addToCart } = useCart();
+  const [added, setAdded] = useState(false);
 
   const discount = type === 'online'
     ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
@@ -13,6 +17,19 @@ export default function ProductCard({ product, type = 'offline', recommendation 
     'Best Nearby Shop': 'badge-nearby',
     'Best Overall Value': 'badge-best-value',
   }[recommendation] || '';
+
+  const handleAddToCart = (e) => {
+    e.stopPropagation();
+    addToCart({
+      productId: product._id || product.id,
+      name: product.name || product.productName,
+      price: product.price,
+      image: product.image,
+      store: product.shopName || product.platform || '',
+    });
+    setAdded(true);
+    setTimeout(() => setAdded(false), 1200);
+  };
 
   return (
     <div
@@ -77,15 +94,21 @@ export default function ProductCard({ product, type = 'offline', recommendation 
           )}
         </div>
 
-        {/* Action */}
-        <div className="mt-3">
+        {/* Actions */}
+        <div className="mt-3 flex flex-col gap-2">
+          <button
+            onClick={handleAddToCart}
+            className={`${added ? 'btn-secondary' : 'btn-primary'} text-xs !py-2 w-full flex items-center justify-center gap-1 transition-all`}
+          >
+            {added ? '✓ Added' : <><HiShoppingCart /> Add to Cart</>}
+          </button>
           {type === 'online' ? (
             <a
               href={product.url || '#'}
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="btn-primary text-xs !py-2 block text-center w-full"
+              className="btn-secondary text-xs !py-2 block text-center w-full"
             >
               Buy Now →
             </a>

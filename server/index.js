@@ -42,6 +42,7 @@ app.use('/uploads', express.static(uploadsDir));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/products', require('./routes/products'));
 app.use('/api/retailer', require('./routes/retailer'));
+app.use('/api/stores', require('./routes/stores'));
 
 // Image upload endpoint
 app.post('/api/upload', upload.single('image'), (req, res) => {

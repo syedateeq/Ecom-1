@@ -20,6 +20,7 @@ import PriceManagement from './pages/PriceManagement'
 import SalesInsights from './pages/SalesInsights'
 import LocalReach from './pages/LocalReach'
 import TrustedPlatform from './pages/TrustedPlatform'
+import Cart from './pages/Cart'
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
           <Route path="/nearby-shops" element={<NearbyShops />} />
           <Route path="/smart-recommendations" element={<SmartRecommendations />} />
           <Route path="/retailer-dashboard" element={<RetailerLanding />} />
+          <Route path="/cart" element={<Cart />} />
         </Routes>
       </main>
     </div>
