@@ -6,11 +6,19 @@ const http = require('http');
 
 // ─── URL helpers ────────────────────────────────────────────────────────────
 
+/** Browser-like headers so Amazon/Flipkart don't block us */
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.5',
+};
+
 /**
- * Resolve a potentially shortened URL by following up to 5 redirects.
- * Returns the final URL string, or the original URL if no redirect happened / error.
+ * Resolve a potentially shortened URL by following up to 10 redirects.
+ * Uses GET (not HEAD) because Amazon blocks HEAD on short-link domains.
+ * Aborts the response body immediately after reading the Location header.
  */
-function resolveShortUrl(url, maxRedirects = 5) {
+function resolveShortUrl(url, maxRedirects = 10) {
   return new Promise((resolve) => {
     let current = url;
     let remaining = maxRedirects;
@@ -23,21 +31,31 @@ function resolveShortUrl(url, maxRedirects = 5) {
       try { parsedUrl = new URL(u); } catch { return resolve(current); }
 
       const lib = parsedUrl.protocol === 'https:' ? https : http;
+
+      // Try GET first (Amazon blocks HEAD on amzn.in)
       const req = lib.request(
-        { method: 'HEAD', hostname: parsedUrl.hostname, port: parsedUrl.port || undefined,
-          path: parsedUrl.pathname + parsedUrl.search, headers: { 'User-Agent': 'Mozilla/5.0' } },
+        {
+          method: 'GET',
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port || undefined,
+          path: parsedUrl.pathname + parsedUrl.search,
+          headers: { ...BROWSER_HEADERS, Host: parsedUrl.hostname },
+        },
         (res) => {
+          // Immediately destroy response body — we only need headers
+          res.resume();
+
           const loc = res.headers['location'];
-          if (loc && (res.statusCode >= 300 && res.statusCode < 400)) {
-            // Location may be relative
+          if (loc && res.statusCode >= 300 && res.statusCode < 400) {
             current = loc.startsWith('http') ? loc : new URL(loc, u).href;
             follow(current);
           } else {
+            // No redirect — we're at the final URL
             resolve(current);
           }
         }
       );
-      req.setTimeout(5000, () => { req.destroy(); resolve(current); });
+      req.setTimeout(8000, () => { req.destroy(); resolve(current); });
       req.on('error', () => resolve(current));
       req.end();
     }
@@ -48,10 +66,11 @@ function resolveShortUrl(url, maxRedirects = 5) {
 
 /** Known short-link / redirect domains that must be resolved before extraction */
 const SHORT_DOMAINS = new Set([
-  'amzn.in', 'amzn.to',
+  'amzn.in', 'amzn.to', 'amzn.com', 'a.co',
   'fkrt.cc', 'fkrt.it',
   'bit.ly', 'tinyurl.com', 'rb.gy', 't.co',
   'ow.ly', 'is.gd', 'buff.ly', 'goo.gl', 'shorturl.at',
+  'cutt.ly', 'rebrand.ly',
 ]);
 
 function isShortOrRedirectUrl(hostname) {
@@ -59,58 +78,120 @@ function isShortOrRedirectUrl(hostname) {
   return SHORT_DOMAINS.has(h);
 }
 
+/**
+ * Detect if the hostname belongs to Amazon or Flipkart.
+ * Handles www, m (mobile), smile, dl sub-domains, AND short-link domains.
+ */
 function detectPlatform(hostname) {
   const h = hostname.replace(/^(www\.|m\.|smile\.|dl\.)/, '').toLowerCase();
+  // Standard domains
   if (h === 'amazon.in' || h === 'amazon.com') return 'Amazon';
   if (h === 'flipkart.com') return 'Flipkart';
+  // Short-link domains (fallback when redirect resolution failed)
+  if (h === 'amzn.in' || h === 'amzn.to' || h === 'amzn.com' || h === 'a.co') return 'Amazon';
+  if (h === 'fkrt.cc' || h === 'fkrt.it') return 'Flipkart';
   return null;
 }
 
-// Amazon: match  /optional-slug/dp/ASIN  or  /gp/product/ASIN  or  /gp/aw/d/ASIN
-const AMAZON_RE = /\/(?:([^/]+)\/)?(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i;
-
-function extractAmazonTitle(parsed) {
-  const m = parsed.pathname.match(AMAZON_RE);
-  if (!m) return null;
-
-  const slug = m[1]; // e.g. "Apple-iPhone-15-128GB-Black" — may be undefined
-  if (slug) {
-    const titleWords = slug
-      .split('-')
-      .map(w => w.replace(/[_+%20]/g, ' ').trim())
-      .filter(w => w.length > 0 && w !== 'dp' && w !== 'gp');
-    if (titleWords.length > 0) return titleWords.join(' ');
+/**
+ * Strip tracking / affiliate / ref query params — keeps only product-identifying ones.
+ */
+function normalizeProductUrl(parsedUrl) {
+  // Amazon: keep nothing (product ID is in the path)
+  // Flipkart: keep 'pid' only
+  const keepParams = new Set(['pid', 'q', 'title']);
+  const cleaned = new URL(parsedUrl.href);
+  for (const key of [...cleaned.searchParams.keys()]) {
+    if (!keepParams.has(key)) cleaned.searchParams.delete(key);
   }
-  // Fallback: use ASIN as search term (may not match DB but avoids hard failure)
-  return m[2];
+  return cleaned;
 }
 
-// Flipkart: /product-slug/p/ITEM_ID
-const FLIPKART_RE = /\/([^/]+)\/p\/[^/?#]*/i;
+/**
+ * Normalize the pathname for Flipkart dl.flipkart.com links that prefix /dl/
+ */
+function normalizePath(pathname, platform) {
+  let p = pathname;
+  if (platform === 'Flipkart') {
+    // dl.flipkart.com/dl/product-name/p/ID → strip leading /dl
+    p = p.replace(/^\/dl\//, '/');
+  }
+  return p;
+}
 
-function extractFlipkartTitle(parsed) {
+// ─── Amazon extraction ──────────────────────────────────────────────────────
+
+// Match /optional-slug/dp/ASIN  or  /gp/product/ASIN  or  /gp/aw/d/ASIN
+const AMAZON_RE = /\/(?:([^/]+)\/)?(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i;
+// Match Amazon share-link path /d/SHARE_CODE (used by amzn.in/d/xxx)
+const AMAZON_SHARE_RE = /\/d\/([A-Za-z0-9_-]+)/;
+
+function extractAmazonTitle(parsed) {
+  // Try standard product URL patterns first
+  const m = parsed.pathname.match(AMAZON_RE);
+  if (m) {
+    const slug = m[1]; // "Apple-iPhone-15-128GB-Black" — may be undefined
+    if (slug && slug !== '-') {
+      const titleWords = slug
+        .split('-')
+        .map(w => decodeURIComponent(w).replace(/[_+]/g, ' ').trim())
+        .filter(w => w.length > 0 && !/^(dp|gp|ref|sspa|s)$/i.test(w));
+      if (titleWords.length > 0) return titleWords.join(' ');
+    }
+    // Fallback: use ASIN as search term
+    return m[2];
+  }
+
+  // Short share link: amzn.in/d/04OZsnR4 — no slug, just a code
+  const shareMatch = parsed.pathname.match(AMAZON_SHARE_RE);
+  if (shareMatch) {
+    // We can't extract a title from just a share code.
+    // Return the code so the caller knows extraction partially succeeded.
+    return null;
+  }
+
+  return null;
+}
+
+// ─── Flipkart extraction ────────────────────────────────────────────────────
+
+// Match /product-slug/p/ITEM_ID  (after /dl/ has been stripped)
+const FLIPKART_RE = /\/([^/]+)\/p\/([^/?#]*)/i;
+
+function extractFlipkartTitle(parsed, normalizedPath) {
+  const pathToUse = normalizedPath || parsed.pathname;
+
   // Try /slug/p/id pattern
-  const m = parsed.pathname.match(FLIPKART_RE);
+  const m = pathToUse.match(FLIPKART_RE);
   if (m) {
     const slug = m[1];
-    if (slug && slug !== 'p') {
+    if (slug && slug !== 'p' && slug !== 'dl') {
       const words = slug
         .split('-')
-        .map(w => w.replace(/[_+%20]/g, ' ').trim())
+        .map(w => decodeURIComponent(w).replace(/[_+]/g, ' ').trim())
         .filter(w => w.length > 0);
       if (words.length > 0) return words.join(' ');
     }
   }
-  // Fallback: query param
+
+  // Fallback: query params
   const qParam = parsed.searchParams.get('q') || parsed.searchParams.get('title');
   if (qParam) return qParam;
+
+  // Last resort: try 'name' param (some Flipkart share links)
+  const nameParam = parsed.searchParams.get('name');
+  if (nameParam) return nameParam.replace(/-/g, ' ');
+
   return null;
 }
+
+// ─── Shared helpers ─────────────────────────────────────────────────────────
 
 function slugToReadable(title) {
   if (!title) return title;
   return title
-    .replace(/\b(dp|gp|ref|pid|lid|marketplace|store|srno|otracker|iid|ssid|affid)\b/gi, '')
+    .replace(/\b(dp|gp|ref|pid|lid|marketplace|store|srno|otracker|iid|ssid|affid|dl|www|http|https)\b/gi, '')
+    .replace(/[%]20/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -294,15 +375,17 @@ router.post('/url-search', async (req, res) => {
     let wasShortLink = isShortOrRedirectUrl(parsed.hostname);
 
     if (needsResolve) {
+      console.log(`[url-search] Resolving short URL: ${url}`);
       resolvedUrl = await resolveShortUrl(url);
+      console.log(`[url-search] Resolved to: ${resolvedUrl}`);
       try { parsed = new URL(resolvedUrl); } catch { /* keep original parsed */ }
     }
 
-    // ── Step 2: Detect platform from resolved URL ───────────────────────────
+    // ── Step 2: Normalize the URL ───────────────────────────────────────────
+    parsed = normalizeProductUrl(parsed);
     const platform = detectPlatform(parsed.hostname);
 
     if (!platform) {
-      // Still not a known platform after resolving
       if (wasShortLink) {
         return res.status(400).json({
           message: 'Short product links are not supported yet. Please paste the full Amazon or Flipkart product page URL.',
@@ -316,11 +399,13 @@ router.post('/url-search', async (req, res) => {
     }
 
     // ── Step 3: Extract product title ───────────────────────────────────────
+    const normalizedPath = normalizePath(parsed.pathname, platform);
     let rawTitle = null;
+
     if (platform === 'Amazon') {
       rawTitle = extractAmazonTitle(parsed);
     } else {
-      rawTitle = extractFlipkartTitle(parsed);
+      rawTitle = extractFlipkartTitle(parsed, normalizedPath);
     }
 
     let extractedTitle = rawTitle ? slugToReadable(rawTitle) : null;
@@ -328,7 +413,7 @@ router.post('/url-search', async (req, res) => {
     if (!extractedTitle) {
       if (wasShortLink) {
         return res.status(400).json({
-          message: 'Short product links are not supported yet. Please paste the full Amazon or Flipkart product page URL.',
+          message: 'Could not extract product details from the short link. The link may have expired or redirected to a non-product page. Please paste the full Amazon or Flipkart product page URL.',
           isShortLink: true
         });
       }

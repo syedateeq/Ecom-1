@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
-import { HiQrcode, HiSearch, HiPhotograph, HiArrowLeft, HiCheck, HiUpload, HiX } from 'react-icons/hi';
+import { HiQrcode, HiSearch, HiArrowLeft, HiCheck, HiUpload, HiX, HiExclamationCircle, HiInformationCircle } from 'react-icons/hi';
 
 export default function AddProduct() {
   const { isRetailer } = useAuth();
@@ -11,6 +11,7 @@ export default function AddProduct() {
   const [barcodeStatus, setBarcodeStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -21,6 +22,42 @@ export default function AddProduct() {
   });
 
   const categories = ['Electronics', 'Fashion', 'Footwear', 'Kitchen', 'Books', 'General'];
+
+  // ─── Client-side validation (mirrors backend rules) ─────────────────────────
+  const validateProduct = (f) => {
+    if (!f.name || !String(f.name).trim()) return 'Product name is required.';
+    if (!f.category) return 'Category is required.';
+
+    const price = Number(f.price);
+    const mrp   = Number(f.mrp);
+
+    if (f.price === '' || f.price === null || f.price === undefined) return 'Selling price is required.';
+    if (isNaN(price) || price <= 0) return 'Selling price must be a positive number.';
+
+    if (f.mrp === '' || f.mrp === null || f.mrp === undefined) return 'MRP (original price) is required.';
+    if (isNaN(mrp) || mrp <= 0) return 'MRP must be a positive number.';
+
+    if (mrp <= price) return 'MRP (original price) must be greater than the selling price.';
+
+    const minPrice = mrp * 0.4;
+    if (price <= minPrice) {
+      return `Selling price must be greater than 40% of the original price (MRP). Minimum allowed: ₹${Math.ceil(minPrice + 1).toLocaleString()}.`;
+    }
+
+    const stock = Number(f.stock);
+    if (isNaN(stock) || stock < 0) return 'Stock must be a non-negative number.';
+
+    return null; // all good
+  };
+
+  // ─── Discount badge color ────────────────────────────────────────────────────
+  const getDiscountColor = (discount) => {
+    // Green if selling price is above 40% of MRP, amber if close, red if too low
+    const priceRatio = form.price && form.mrp ? (Number(form.price) / Number(form.mrp)) * 100 : 0;
+    if (priceRatio > 40) return 'text-secondary';   // green — meets the rule
+    if (priceRatio > 25) return 'text-gold';          // amber — getting close to limit
+    return 'text-danger';                              // red — too low
+  };
 
   // Barcode scanner lookup
   const handleBarcodeScan = async () => {
@@ -67,7 +104,6 @@ export default function AddProduct() {
       const { data } = await API.post('/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      // Prepend backend URL so image loads correctly regardless of proxy configuration
       const backendUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
       return `${backendUrl}${data.imageUrl}`;
     } catch (err) {
@@ -80,9 +116,17 @@ export default function AddProduct() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+
+    // ── Client-side validation first (no API call if invalid) ─────────────────
+    const validationError = validateProduct(form);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
     try {
-      // Upload image first if a file was selected
       const imageUrl = await uploadImage();
 
       await API.post('/retailer/products', {
@@ -96,19 +140,25 @@ export default function AddProduct() {
       setSuccess(true);
       setTimeout(() => navigate('/retailer/dashboard'), 1500);
     } catch (err) {
+      // Surface backend validation error message
+      const msg = err.response?.data?.message || 'Failed to add product. Please try again.';
+      setError(msg);
       console.error('Add product error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Auto-calculate discount when price and mrp change
+  // Auto-calculate discount when price or mrp changes
   const updatePrice = (field, value) => {
     const updated = { ...form, [field]: value };
     if (updated.price && updated.mrp && Number(updated.mrp) > 0) {
       updated.discount = Math.round(((Number(updated.mrp) - Number(updated.price)) / Number(updated.mrp)) * 100);
+    } else {
+      updated.discount = 0;
     }
     setForm(updated);
+    if (error) setError(''); // clear error when user edits prices
   };
 
   if (success) {
@@ -130,7 +180,17 @@ export default function AddProduct() {
       </button>
 
       <h1 className="text-2xl font-bold mb-2">Add New Product</h1>
-      <p className="text-muted text-sm mb-8">Scan a barcode to auto-fill or enter details manually</p>
+      <p className="text-muted text-sm mb-4">Scan a barcode to auto-fill or enter details manually</p>
+
+      {/* Pricing Rule Notice */}
+      <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 mb-8 text-sm">
+        <HiInformationCircle className="text-primary text-lg mt-0.5 shrink-0" />
+        <p className="text-text/80">
+            <span className="font-semibold text-primary">Listing Rule:</span> Selling price must be{' '}
+          <span className="font-bold text-secondary">greater than 40% of the MRP</span>.
+          For example: MRP ₹10,000 → Selling price must be above ₹4,000.
+        </p>
+      </div>
 
       {/* Barcode Scanner Section */}
       <div className="glass-card p-6 mb-8 animate-fade-in-up">
@@ -163,22 +223,29 @@ export default function AddProduct() {
         <h2 className="text-lg font-semibold mb-4">Product Details</h2>
 
         <div className="space-y-4">
+          {/* Product Name */}
           <div>
             <label className="text-sm text-muted block mb-1">Product Name *</label>
-            <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-              className="input-field" placeholder="e.g. iPhone 15 128GB" required />
+            <input
+              type="text" value={form.name}
+              onChange={e => { setForm({ ...form, name: e.target.value }); if (error) setError(''); }}
+              className="input-field" placeholder="e.g. iPhone 15 128GB" required
+            />
           </div>
 
+          {/* Description */}
           <div>
             <label className="text-sm text-muted block mb-1">Description</label>
             <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
               className="input-field !h-20 resize-none" placeholder="Brief product description" />
           </div>
 
+          {/* Category & Barcode */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm text-muted block mb-1">Category</label>
-              <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}
+              <label className="text-sm text-muted block mb-1">Category *</label>
+              <select value={form.category}
+                onChange={e => { setForm({ ...form, category: e.target.value }); if (error) setError(''); }}
                 className="input-field cursor-pointer">
                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -190,29 +257,47 @@ export default function AddProduct() {
             </div>
           </div>
 
+          {/* Pricing Fields */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="text-sm text-muted block mb-1">Selling Price (₹) *</label>
               <input type="number" value={form.price} onChange={e => updatePrice('price', e.target.value)}
-                className="input-field" placeholder="e.g. 72999" required />
+                className="input-field" placeholder="e.g. 47940" required min="1" />
             </div>
             <div>
               <label className="text-sm text-muted block mb-1">MRP (₹) *</label>
               <input type="number" value={form.mrp} onChange={e => updatePrice('mrp', e.target.value)}
-                className="input-field" placeholder="e.g. 79900" required />
+                className="input-field" placeholder="e.g. 79900" required min="1" />
             </div>
             <div>
               <label className="text-sm text-muted block mb-1">Discount (%)</label>
-              <input type="number" value={form.discount} readOnly
-                className="input-field !bg-surface cursor-not-allowed" />
-              <span className="text-xs text-muted">Auto-calculated</span>
+              <div className="relative">
+                <input type="number" value={form.discount} readOnly
+                  className="input-field !bg-surface cursor-not-allowed pr-14" />
+              {/* Color-coded discount badge overlay */}
+                {form.price && form.mrp && Number(form.mrp) > 0 && (
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold ${getDiscountColor()}`}>
+                    {Number(form.price) > Number(form.mrp) * 0.4 ? '✓ OK' : '✗ Low'}
+                  </span>
+                )}
+              </div>
+              {/* Live feedback message under discount field */}
+              <span className={`text-xs font-medium mt-1 block ${form.discount > 0 ? getDiscountColor() : 'text-muted'}`}>
+                {form.price && form.mrp && Number(form.mrp) > 0
+                  ? Number(form.price) > Number(form.mrp) * 0.4
+                    ? `✅ ${form.discount}% off — Price is above 40% of MRP`
+                    : `⚠️ ${form.discount}% off — Selling price must be above 40% of MRP (₹${Math.ceil(Number(form.mrp) * 0.4 + 1).toLocaleString()})`
+                  : 'Auto-calculated from MRP & Price'}
+              </span>
             </div>
           </div>
 
+          {/* Stock */}
           <div>
             <label className="text-sm text-muted block mb-1">Stock Quantity</label>
-            <input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })}
-              className="input-field" />
+            <input type="number" value={form.stock}
+              onChange={e => { setForm({ ...form, stock: e.target.value }); if (error) setError(''); }}
+              className="input-field" min="0" />
           </div>
 
           {/* Product Photo Upload */}
@@ -240,6 +325,17 @@ export default function AddProduct() {
               </div>
             )}
           </div>
+
+          {/* ── Error Banner ─────────────────────────────────────────────────── */}
+          {error && (
+            <div className="flex items-start gap-3 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 animate-fade-in-up">
+              <HiExclamationCircle className="text-danger text-xl mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-danger">Cannot list this product</p>
+                <p className="text-sm text-danger/80 mt-0.5">{error}</p>
+              </div>
+            </div>
+          )}
 
           <button type="submit" disabled={loading || uploading} className="btn-primary w-full !py-3 text-center disabled:opacity-50 mt-4">
             {loading ? 'Adding Product...' : 'Add Product'}

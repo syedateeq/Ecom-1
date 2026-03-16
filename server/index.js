@@ -43,6 +43,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/products', require('./routes/products'));
 app.use('/api/retailer', require('./routes/retailer'));
 app.use('/api/stores', require('./routes/stores'));
+app.use('/api', require('./routes/compare'));
 
 // Image upload endpoint
 app.post('/api/upload', upload.single('image'), (req, res) => {
@@ -56,8 +57,13 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'SmartCart API is running (SQLite)' });
 });
 
+// Start scheduled price refresh cron job
+const { startPriceRefreshJob } = require('./services/cronJobs');
+startPriceRefreshJob();
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
   console.log(`📦 Database: SQLite (smartcart.db)`);
+  console.log(`🔄 Price refresh: every 30 minutes`);
 });
