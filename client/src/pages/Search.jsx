@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import API from '../utils/api';
 import ProductCard from '../components/ProductCard';
+import NearbyStoresFinder from '../components/NearbyStoresFinder';
 import { HiSearch, HiFilter, HiSortDescending, HiX, HiShoppingBag, HiExternalLink, HiLink, HiTrendingDown } from 'react-icons/hi';
 
 export default function Search() {
@@ -324,7 +325,8 @@ export default function Search() {
 
       {/* Results Grid */}
       {!loading && results && (
-        <div className="space-y-8">
+        <>
+          <div className="space-y-8">
           {/* Online Prices */}
           {(activeTab === 'all' || activeTab === 'online') && filteredOnline.length > 0 && (
             <div>
@@ -364,7 +366,13 @@ export default function Search() {
               </div>
             </div>
           )}
-        </div>
+          </div>
+
+          {/* Nearby Stores Discovery (Google Maps Integration) */}
+          {(meta?.product || searchParams.get('q')) && (
+            <NearbyStoresFinder keyword={meta?.product || searchParams.get('q')} />
+          )}
+        </>
       )}
     </div>
   );

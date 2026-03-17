@@ -43,6 +43,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/products', require('./routes/products'));
 app.use('/api/retailer', require('./routes/retailer'));
 app.use('/api/stores', require('./routes/stores'));
+app.use('/api/discover', require('./routes/nearbyDiscover'));
 app.use('/api', require('./routes/compare'));
 
 // Image upload endpoint
