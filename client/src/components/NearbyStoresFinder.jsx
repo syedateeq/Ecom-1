@@ -54,8 +54,17 @@ export default function NearbyStoresFinder({ keyword }) {
           radius: 5000,
         },
       });
-      setShops(data.shops || []);
-      setGooglePlaces(data.googlePlaces || []);
+      console.log('NearbyStoresFinder API Response:', data);
+      // Merge dbShops into shops format, keep googleShops as-is
+      const dbShopsFormatted = (data.dbShops || []).map((s) => ({
+        ...s,
+        shopName: s.name,
+        shopAddress: s.address,
+        distanceText: s.distanceText || `${s.distance} km`,
+        nearestAndCheapest: false,
+      }));
+      setShops(dbShopsFormatted);
+      setGooglePlaces(data.googleShops || []);
     } catch (err) {
       console.error('Nearby discover error:', err);
       setError('Could not fetch nearby stores.');
